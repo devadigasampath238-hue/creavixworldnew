@@ -1,0 +1,29 @@
+{
+ "name": "creavixworld",
+ "private": true,
+ "version": "2.0.0",
+ "type": "module",
+ "scripts": {
+  "dev": "vite",
+  "build": "tsc --noEmit && vite build",
+  "preview": "vite preview",
+  "shots": "node scripts/capture.mjs"
+ },
+ "dependencies": {
+  "@formspree/react": "^3.0.0",
+  "framer-motion": "^11.11.0",
+  "lenis": "^1.1.13",
+  "lucide-react": "^0.453.0",
+  "react": "^18.3.1",
+  "react-dom": "^18.3.1",
+  "simple-icons": "^13.0.0"
+ },
+ "devDependencies": {
+  "@types/react": "^18.3.3",
+  "@types/react-dom": "^18.3.0",
+  "@vitejs/plugin-react": "^4.3.1",
+  "playwright": "^1.48.0",
+  "typescript": "^5.5.3",
+  "vite": "^5.4.0"
+ }
+}

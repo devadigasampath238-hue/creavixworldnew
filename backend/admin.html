@@ -1,0 +1,64 @@
+<!doctype html><html lang=en><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><title>CreavixWorld Admin</title>
+<style>
+:root{--bg:#F4F6FB;--card:#fff;--tx:#11121A;--mu:#666A78;--bd:#E5E7EF;--b:#2878FF;--p:#8B42F5;--g:linear-gradient(120deg,#2878FF,#8B42F5)}
+*{box-sizing:border-box}body{margin:0;font:14px/1.5 Inter,system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+button,input,textarea,select{font:inherit;border:1px solid var(--bd);border-radius:10px;padding:9px 12px;background:#fff;color:var(--tx)}button{cursor:pointer;transition:.2s}button:hover{transform:translateY(-1px)}
+.pri{background:var(--g);color:#fff;border:0}.dan{color:#d33;border-color:#f3c6c6}.sm{padding:5px 10px;font-size:13px}
+#login{min-height:100vh;display:grid;place-items:center}#login form{background:var(--card);padding:36px;border-radius:18px;border:1px solid var(--bd);display:grid;gap:12px;width:min(360px,92vw);box-shadow:0 20px 60px rgba(40,120,255,.12)}
+.brand{font:700 20px 'Space Grotesk',sans-serif;background:var(--g);-webkit-background-clip:text;color:transparent}
+#app{display:none;grid-template-columns:230px 1fr;min-height:100vh}aside{background:#fff;border-right:1px solid var(--bd);padding:22px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:6px}
+aside button{text-align:left;border:0;background:none;padding:10px 12px;display:flex;justify-content:space-between}aside button.on{background:#EEF3FF;color:var(--b);font-weight:600}
+.bd{background:var(--g);color:#fff;border-radius:99px;padding:0 8px;font-size:12px}main{padding:28px;max-width:1100px;width:100%}
+h1{margin:0 0 20px;font:700 26px 'Space Grotesk',sans-serif}h3{margin:0 0 10px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:22px}.st{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px}.st b{display:block;font:700 30px 'Space Grotesk';background:var(--g);-webkit-background-clip:text;color:transparent}.st span{color:var(--mu)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:16px;margin-bottom:12px}.row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}.pj img,.ph{width:100%;aspect-ratio:16/10;object-fit:cover;object-position:top;border-radius:10px;background:#EEF0F7;display:grid;place-items:center;color:var(--mu)}
+.tag{font-size:12px;padding:2px 9px;border-radius:99px;background:#EEF3FF;color:var(--b)}.tag.o{background:#FFF4E0;color:#b36b00}.tag.g{background:#E6F8EE;color:#1a8a4a}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--b);display:inline-block;margin-right:8px}.mu{color:var(--mu)}.msg{white-space:pre-wrap;margin:8px 0}
+.tabs{display:flex;gap:8px;margin-bottom:14px}.tabs button.on{background:var(--tx);color:#fff}
+dialog{border:0;border-radius:16px;padding:24px;width:min(480px,94vw)}dialog form,#addf{display:grid;gap:10px}dialog::backdrop{background:rgba(17,18,26,.5)}
+#toast{position:fixed;bottom:20px;right:20px;background:var(--tx);color:#fff;padding:12px 18px;border-radius:12px;opacity:0;transition:.3s;pointer-events:none}#toast.s{opacity:1}
+@media(max-width:800px){#app{grid-template-columns:1fr}aside{position:static;height:auto;flex-direction:row;flex-wrap:wrap}}
+</style>
+<div id=login><form id=lf><div class=brand>CreavixWorld Admin</div><input id=pw type=password placeholder="Admin password" autofocus><button class=pri>Sign in</button><small id=le class=mu></small></form></div>
+<div id=app><aside><div class=brand style="padding:6px 12px 16px">CreavixWorld</div><button data-t=ov>Overview</button><button data-t=pj>Websites</button><button data-t=rv>Reviews <span class=bd id=nrv></span></button><button data-t=en>Enquiries <span class=bd id=nen></span></button><div style="flex:1"></div><button onclick="sessionStorage.clear();location.reload()">Sign out</button></aside><main id=m></main></div>
+<dialog id=dg><form id=ef><h3>Edit website</h3><input name=title placeholder=Title required><input name=url type=url required><input name=category placeholder=Category><textarea name=description rows=4 placeholder=Description></textarea><button type=button class=sm onclick="gen(this.form)">✨ Regenerate with AI</button><label><input type=checkbox name=featured> Featured (large layout)</label><div class=row><button type=button onclick="dg.close()">Cancel</button><button class=pri>Save</button></div></form></dialog>
+<div id=toast></div>
+<script>
+let pw=sessionStorage.pw||'',D={p:[],r:[],e:[]},tab=sessionStorage.tab||'ov',rf='pending',q='',eid=0;
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])),
+toast=t=>{const e=$('#toast');e.textContent=t;e.className='s';setTimeout(()=>e.className='',2200)},
+api=(m,u,b)=>fetch(u,{method:m,headers:{'Content-Type':'application/json','X-Admin':pw},body:b&&JSON.stringify(b)}).then(async r=>{if(r.status==401)throw 401;if(!r.ok){let m='Server error '+r.status;try{m=(await r.json()).error||m}catch{}throw new Error(m)}return r.json()}),
+when=s=>new Date(s.replace(' ','T')+'Z').toLocaleString([], {dateStyle:'medium',timeStyle:'short'});
+async function load(){try{[D.p,D.r,D.e]=await Promise.all([api('GET','/api/projects'),api('GET','/api/admin/reviews'),api('GET','/api/admin/enquiries')])}catch(x){if(x==401){sessionStorage.clear();return location.reload()}toast('Could not load data: '+(x.message||x));console.error(x);return}
+$('#login').style.display='none';$('#app').style.display='grid';const pr=D.r.filter(r=>!r.approved).length,un=D.e.filter(e=>!e.read).length;$('#nrv').textContent=pr||'';$('#nen').textContent=un||'';$('#nrv').style.display=pr?'':'none';$('#nen').style.display=un?'':'none';
+document.querySelectorAll('aside [data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t==tab));render()}
+const prev=p=>p.shot_url?`<img src="${esc(p.shot_url)}" alt="">`:`<div class=ph>Preview generating… (refresh in a minute)</div>`;
+const enq=e=>`<div class=card><div class=row><div><span class=dot style="${e.read?'visibility:hidden':''}"></span><b>${esc(e.name)}</b> <a href="mailto:${esc(e.email)}">${esc(e.email)}</a></div><span class=mu>${when(e.created)}</span></div>
+<div class=mu>${esc(e.business||'—')} · ${esc(e.type)} · ${esc(e.budget)} · <span class="tag ${e.emailed?'g':'o'}">${e.emailed==2?'emailed via Formspree':e.emailed?'emailed':'not emailed'}</span></div><div class=msg>${esc(e.message)}</div>
+<div class=row><span><a class="sm" href="mailto:${esc(e.email)}?subject=Re: your CreavixWorld enquiry"><button class="sm pri">Reply</button></a> <button class=sm onclick="act('read',${e.id},${e.read?0:1})">${e.read?'Mark unread':'Mark read'}</button></span><button class="sm dan" onclick="act('delE',${e.id})">Delete</button></div></div>`;
+const rev=r=>`<div class=card><div class=row><div><span style="color:#f5a623">${'★'.repeat(r.rating)}</span> <b>${esc(r.name)}</b> <span class=mu>${esc(r.role)}</span></div><span class="tag ${r.approved?'g':'o'}">${r.approved?'Live on site':'Pending'}</span></div><div class=msg>${esc(r.text)}</div><div class=row><span class=mu>${when(r.created)}</span><span>${r.approved?'':`<button class="sm pri" onclick="act('ok',${r.id})">Approve</button> `}<button class="sm dan" onclick="act('delR',${r.id})">Delete</button></span></div></div>`;
+function render(){let h='';
+if(tab=='ov'){const pr=D.r.filter(r=>!r.approved),un=D.e.filter(e=>!e.read);h=`<h1>Overview</h1><div class=stats><div class=st><b>${D.p.length}</b><span>Websites</span></div><div class=st><b>${D.e.length}</b><span>Enquiries (${un.length} unread)</span></div><div class=st><b>${pr.length}</b><span>Reviews awaiting approval</span></div><div class=st><b>${D.r.length-pr.length}</b><span>Reviews live</span></div></div>
+<h3>Latest enquiries</h3>${D.e.slice(0,4).map(enq).join('')||'<p class=mu>No enquiries yet.</p>'}<h3>Reviews to approve</h3>${pr.slice(0,3).map(rev).join('')||'<p class=mu>Nothing pending.</p>'}`}
+if(tab=='pj')h=`<h1>Websites</h1><div class=card><h3>Add a website</h3><form id=addf><input name=title placeholder="Project name" required><input name=url type=url placeholder="https://live-site-url" required><input name=category placeholder="Category e.g. Restaurant Website"><textarea name=description rows=2 placeholder="Description (leave empty to auto-generate with AI)"></textarea><button type=button class=sm onclick="gen(this.form)">✨ Auto-generate description with AI</button><div class=row><label><input type=checkbox name=featured> Featured (large layout)</label><button class=pri>Add &amp; generate preview</button></div></form></div>
+<div class=grid>${D.p.map((p,i)=>`<div class="card pj">${prev(p)}<div class=row style="margin-top:10px"><b>${esc(p.title)}</b>${p.featured?'<span class=tag>Featured</span>':''}</div><div class=mu style="word-break:break-all"><a href="${esc(p.url)}" target=_blank rel=noopener>${esc(p.url)}</a></div><p class=mu>${esc(p.description)}</p><div class=row><span><button class=sm onclick="act('up',${i})" ${i?'':'disabled'}>↑</button> <button class=sm onclick="act('dn',${i})" ${i<D.p.length-1?'':'disabled'}>↓</button> <button class=sm onclick="act('ed',${p.id})">Edit</button> <button class=sm onclick="act('rp',${p.id})">Refresh preview</button></span><button class="sm dan" onclick="act('delP',${p.id})">Delete</button></div></div>`).join('')}</div>`;
+if(tab=='rv'){const l=D.r.filter(r=>rf=='all'||(rf=='pending')==!r.approved);h=`<h1>Reviews</h1><div class=tabs>${['pending','approved','all'].map(f=>`<button class="${rf==f?'on':''}" onclick="rf='${f}';render()">${f}</button>`).join('')}</div>${l.map(rev).join('')||'<p class=mu>Nothing here.</p>'}`}
+if(tab=='en'){const l=D.e.filter(e=>(e.name+e.email+e.business+e.message).toLowerCase().includes(q.toLowerCase()));h=`<h1>Enquiries</h1><input id=qs placeholder="Search enquiries…" value="${esc(q)}" style="width:100%;margin-bottom:14px">${l.map(enq).join('')||'<p class=mu>No enquiries yet.</p>'}`}
+$('#m').innerHTML=h;const s=$('#qs');if(s){s.oninput=()=>{q=s.value;const p=s.selectionStart;render();$('#qs').focus();$('#qs').setSelectionRange(p,p)}};const f=$('#addf');if(f)f.onsubmit=async e=>{e.preventDefault();const d=Object.fromEntries(new FormData(f));d.featured=!!d.featured;const r=await api('POST','/api/projects',d);toast(r.note||r.error);load()}}
+async function gen(f){if(!f.title.value||!f.url.value)return toast('Enter the name and URL first');toast('Generating with Gemini…');try{const r=await api('POST','/api/admin/describe',{title:f.title.value,url:f.url.value,category:f.category.value});f.description.value=r.description;if(!f.category.value)f.category.value=r.category;toast('Generated — review it, then save')}catch(e){toast(e.message||'AI failed')}}
+async function act(a,id,v){const sw=async(i,j)=>{const A=D.p[i],B=D.p[j];await api('PATCH','/api/projects/'+A.id,{position:B.position});await api('PATCH','/api/projects/'+B.id,{position:A.position})};
+if(a=='read')await api('POST',`/api/enquiries/${id}/read`,{read:!!v});
+if(a=='delE'&&confirm('Delete this enquiry?'))await api('DELETE','/api/enquiries/'+id);
+if(a=='ok'){await api('POST',`/api/reviews/${id}/approve`);toast('Review is now live')}
+if(a=='delR'&&confirm('Delete this review?'))await api('DELETE','/api/reviews/'+id);
+if(a=='delP'&&confirm('Delete this website?'))await api('DELETE','/api/projects/'+id);
+if(a=='rp'){await api('POST',`/api/projects/${id}/refresh`);toast('Regenerating preview…');setTimeout(load,45000)}
+if(a=='up')await sw(id,id-1);if(a=='dn')await sw(id,id+1);
+if(a=='ed'){const p=D.p.find(x=>x.id==id),f=$('#ef');eid=id;f.title.value=p.title;f.url.value=p.url;f.category.value=p.category||'';f.description.value=p.description||'';f.featured.checked=!!p.featured;return dg.showModal()}
+load()}
+$('#ef').onsubmit=async e=>{e.preventDefault();const f=$('#ef');await api('PATCH','/api/projects/'+eid,{title:f.title.value,url:f.url.value,category:f.category.value,description:f.description.value,featured:f.featured.checked?1:0});dg.close();toast('Saved');load()};
+document.querySelectorAll('aside [data-t]').forEach(b=>b.onclick=()=>{tab=sessionStorage.tab=b.dataset.t;load()});
+$('#lf').onsubmit=async e=>{e.preventDefault();pw=$('#pw').value;try{await api('GET','/api/admin/enquiries');sessionStorage.pw=pw;load()}catch{$('#le').textContent='Wrong password.'}};
+if(pw)load();setInterval(()=>pw&&!dg.open&&document.activeElement.tagName!='INPUT'&&load(),30000);
+</script>
