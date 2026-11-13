@@ -128,7 +128,7 @@ function Chatbot() {
   return <>
     <button className="cb-f" onClick={() => { setOpen(!open); click() }} aria-label={open ? 'Close assistant' : 'Open assistant'} aria-expanded={open}>{open ? <X size={20} /> : <Sparkles size={20} />}<span>{open ? 'Close' : 'Ask AI'}</span></button>
     <AnimatePresence>{open && <motion.div className="cb" role="dialog" aria-label="CreavixWorld assistant" initial={{ opacity: 0, y: 20, scale: .96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 20, scale: .96 }} transition={{ duration: .25 }}>
-      <div className="cb-h"><Logo h={36} /><div><b>CreavixWorld Assistant</b><small>Powered by Creavix ai solution · services, projects, pricing help</small></div></div>
+      <div className="cb-h"><Logo h={36} /><div><b>CreavixWorld Assistant</b><small>Powered by Gemini · services, projects, pricing help</small></div></div>
       <div className="cb-b" data-lenis-prevent>
         <div className="cb-m bot">Hi! I’m the CreavixWorld assistant. Ask me about our services, our projects, or how to start your website.</div>
         {msgs.map((m, i) => <motion.div key={i} className={`cb-m ${m.role === 'user' ? 'me' : 'bot'}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>{m.text}</motion.div>)}
