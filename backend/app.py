@@ -71,6 +71,8 @@ def shot_file(f):  # screenshots live in DATA_DIR/shots (a persistent disk in pr
     return send_from_directory(SHOTS if (SHOTS / f).exists() else BASE / 'static' / 'shots', f)
 @app.get('/api/check')
 def check(): return jsonify(origin=request.headers.get('Origin'), allowed=_o)  # open <backend>/api/check to see what CORS allows
+@app.get('/')
+def home(): return jsonify(ok=True, service='CreavixWorld backend', health='/api/health', admin='/admin')
 @app.get('/api/health')
 def health(): return jsonify(ok=True)
 @app.get('/api/projects')
