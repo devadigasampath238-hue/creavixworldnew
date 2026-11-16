@@ -59,6 +59,6 @@ if(a=='ed'){const p=D.p.find(x=>x.id==id),f=$('#ef');eid=id;f.title.value=p.titl
 load()}
 $('#ef').onsubmit=async e=>{e.preventDefault();const f=$('#ef');await api('PATCH','/api/projects/'+eid,{title:f.title.value,url:f.url.value,category:f.category.value,description:f.description.value,featured:f.featured.checked?1:0});dg.close();toast('Saved');load()};
 document.querySelectorAll('aside [data-t]').forEach(b=>b.onclick=()=>{tab=sessionStorage.tab=b.dataset.t;load()});
-$('#lf').onsubmit=async e=>{e.preventDefault();pw=$('#pw').value;try{await api('GET','/api/admin/enquiries');sessionStorage.pw=pw;load()}catch{$('#le').textContent='Wrong password.'}};
+$('#lf').onsubmit=async e=>{e.preventDefault();pw=$('#pw').value;try{await api('GET','/api/admin/enquiries');sessionStorage.pw=pw;load()}catch(x){$('#le').textContent=x==401?'Wrong password.':x.message||'Could not sign in.'}};
 if(pw)load();setInterval(()=>pw&&!dg.open&&document.activeElement.tagName!='INPUT'&&load(),30000);
 </script>

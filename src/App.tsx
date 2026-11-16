@@ -173,6 +173,7 @@ export default function App() {
   const [menu, setMenu] = useState(false), [snd, setSnd] = useState(soundOn), [scrolled, setScrolled] = useState(false), [active, setActive] = useState('home')
   const [open, setOpen] = useState<number | null>(null), [modal, setModal] = useState<P | null>(null), [projects, setProjects] = useState<P[]>(PROJECTS), [dbg, setDbg] = useState(''), [cur, setCur] = useState('')
   const [st, setSt] = useState<{ s: 'idle' | 'load' | 'ok' | 'err'; m?: string }>({ s: 'idle' }), [errs, setErrs] = useState<Record<string, string>>({})
+  const [adminSaveErr, setAdminSaveErr] = useState(false)
   const progRef = useRef<HTMLDivElement>(null), dot = useRef<HTMLDivElement>(null), prRef = useRef<HTMLDivElement>(null), lenis = useRef<Lenis | null>(null)
   const rm = useReducedMotion()
   const [fs, sendFs] = useForm('mqppovvy'), formRef = useRef<HTMLFormElement>(null)
@@ -221,9 +222,16 @@ export default function App() {
     if (!/^\S+@\S+\.\S+$/.test(d.email || '')) er.email = 'Enter a valid email address.'
     if ((d.message || '').trim().length < 10) er.message = 'Tell me a little more (10+ characters).'
     setErrs(er); if (Object.keys(er).length) return
-    setSt({ s: 'idle' })
-    if (API) fetch(`${API}/api/enquiries`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...d, skip_email: true }) }).catch(e => console.warn('[CreavixWorld] could not save enquiry copy to backend', e)) // copy for the admin dashboard
-    await sendFs(e) // Formspree (React SDK) sends the form
+    setSt({ s: 'idle' }); setAdminSaveErr(false)
+    try {
+      if (!API) throw new Error('Backend URL is not configured.')
+      const response = await fetch(`${API}/api/enquiries`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...d, skip_email: true }) })
+      if (!response.ok) throw new Error(`Backend returned HTTP ${response.status}.`)
+    } catch (error) {
+      console.warn('[CreavixWorld] could not save enquiry copy to backend', error)
+      setAdminSaveErr(true)
+    }
+    await sendFs(d)
   }
   const field = (k: string, label: string, props: object = {}, cls = '') => <label className={cls}>{label}<input name={k} {...props} aria-invalid={!!errs[k]} />{errs[k] && <span className="er" role="alert">{errs[k]}</span>}<ValidationError field={k} errors={fs.errors} className="er" /></label>
   const big = projects.filter(p => p.big), small = projects.filter(p => !p.big)
@@ -306,6 +314,7 @@ export default function App() {
             <button className="fill" disabled={fs.submitting} onMouseEnter={hover}>{fs.submitting ? 'SENDING…' : 'SEND PROJECT INQUIRY'}</button>
             <button type="button" className="ghost wa" onClick={openWA}><Brand i={siWhatsapp} /> CONTACT VIA WHATSAPP</button></div>
           <AnimatePresence>{fs.succeeded && <motion.div className="msg ac" role="status" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>Message sent. I’ll reply by email.</motion.div>}
+            {adminSaveErr && <motion.div className="msg er" role="alert" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>This enquiry may not appear in the admin panel. Please also email us directly to make sure we receive it.</motion.div>}
             {(st.s === 'err' || !!fs.errors) && <motion.div className="msg er" role="alert" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>{st.s === 'err' ? st.m : 'Message could not be sent. Check the fields and try again.'}</motion.div>}</AnimatePresence>
         </form>
       </section>

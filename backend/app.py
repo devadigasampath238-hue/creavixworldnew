@@ -4,22 +4,42 @@ from pathlib import Path
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 
-BASE = Path(__file__).parent; DATA = Path(os.getenv('DATA_DIR', BASE)); SHOTS = DATA / 'shots'; SHOTS.mkdir(parents=True, exist_ok=True)
+BASE = Path(__file__).parent; DATA = Path(os.getenv('DATA_DIR', BASE)); SHOTS = DATA / 'shots'; 
+try: SHOTS.mkdir(parents=True, exist_ok=True)
+except OSError: pass  # read-only filesystem on Vercel
 DB = os.getenv('DB_PATH', str(DATA / 'creavix.db')); lock = threading.Lock()
 app = Flask(__name__, static_folder='static'); _o = [o.strip().rstrip('/') for o in (os.getenv('FRONTEND_ORIGIN') or '*').split(',') if o.strip()]  # empty/unset => allow all
 CORS(app, origins='*' if '*' in _o else _o + ['http://localhost:5173'])
 
+DATABASE_URL = os.getenv('DATABASE_URL', ''); PG = DATABASE_URL.startswith('postgres')
+if PG: import psycopg2, psycopg2.extras
+
 def db(sql, a=(), one=False):
-    with sqlite3.connect(DB) as c:
-        c.row_factory = sqlite3.Row; cur = c.execute(sql, a); rows = cur.fetchall(); c.commit()
-        return (rows[0] if rows else None) if one else (cur.lastrowid if sql.lstrip()[:6].lower() == 'insert' else [dict(r) for r in rows])
+    ins = sql.lstrip()[:6].lower() == 'insert'
+    if PG:  # Supabase Postgres (use the pooler connection string on Vercel)
+        c = psycopg2.connect(DATABASE_URL, connect_timeout=10)
+        try:
+            with c, c.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(sql.replace('?', '%s') + (' returning id' if ins else ''), a)
+                if ins: return cur.fetchone()['id']
+                rows = [dict(r) for r in cur.fetchall()] if cur.description else []
+        finally: c.close()
+    else:
+        with sqlite3.connect(DB) as c:
+            c.row_factory = sqlite3.Row; cur = c.execute(sql, a); rows = [dict(r) for r in cur.fetchall()]; c.commit()
+            if ins: return cur.lastrowid
+    return (rows[0] if rows else None) if one else rows
 
 def init():
-    db('create table if not exists projects(id integer primary key, title, url, category, description, featured int default 0, position int default 0, shot, created default current_timestamp)')
-    db('create table if not exists reviews(id integer primary key, name, role, rating int, text, approved int default 0, created default current_timestamp)')
-    db('create table if not exists enquiries(id integer primary key, name, email, business, type, budget, message, emailed int default 0, created default current_timestamp)')
-    try: db('alter table enquiries add column read int default 0')
+    pk = 'serial primary key' if PG else 'integer primary key'
+    now = "(to_char(now() at time zone 'utc','YYYY-MM-DD HH24:MI:SS'))" if PG else 'current_timestamp'
+    db(f'create table if not exists projects(id {pk}, title text, url text, category text, description text, featured integer default 0, "position" integer default 0, shot text, created text default {now})')
+    db(f'create table if not exists reviews(id {pk}, name text, role text, rating integer, text text, approved integer default 0, created text default {now})')
+    db(f'create table if not exists enquiries(id {pk}, name text, email text, business text, type text, budget text, message text, emailed integer default 0, "read" integer default 0, created text default {now})')
+    try: db('alter table enquiries add column "read" integer default 0')  # older SQLite files
     except Exception: pass
+    if PG:  # lock the tables so the public Supabase key cannot read/write them; only this backend can
+        for t in ('projects', 'reviews', 'enquiries'): db(f'alter table {t} enable row level security')
     if not db('select 1 from projects limit 1'):
         for i, (t, u, c, d, f) in enumerate([
             ('Trust Credit Solutions', 'https://trustcreditsolutions.in/', 'Financial Services Website', 'A professional financial services website designed to present business information, financial services, and customer inquiry functionality.', 1),
@@ -27,7 +47,7 @@ def init():
             ('Hotel Udupi Upachar', 'https://devadigasampath238-hue.github.io/Hotel-Udupi-Upachar/', 'Restaurant Website', 'A restaurant website for Hotel Udupi Upachar.', 0),
             ('Student ERP', 'https://devadigasampath238-hue.github.io/student-erp/', 'Education / ERP Platform', 'A student ERP website featuring academic and student management interfaces.', 0),
             ('Sri Bramhalingeshwar Temple', 'https://devadigasampath238-hue.github.io/SriBramhaLingeshwara/', 'Temple Website', 'A digital temple website showcasing temple information and seva-related features.', 0)]):
-            shoot_async(db('insert into projects(title,url,category,description,featured,position) values(?,?,?,?,?,?)', (t, u, c, d, f, i)), u)
+            shoot_async(db('insert into projects(title,url,category,description,featured,"position") values(?,?,?,?,?,?)', (t, u, c, d, f, i)), u)
 
 PENDING = set()
 def fallback(pid, url):  # no browser needed: fetch a real screenshot from a public screenshot service
@@ -41,7 +61,7 @@ def fallback(pid, url):  # no browser needed: fetch a real screenshot from a pub
                 (SHOTS / f'{pid}.{ext}').write_bytes(data); return f'{pid}.{ext}'
         except Exception as e: print('fallback failed', api[:40], e)
 def shoot(pid, url):  # real screenshot of the live site (works even when iframes are blocked)
-    if os.getenv('NO_SHOTS'): PENDING.discard(pid); return
+    if os.getenv('NO_SHOTS') or os.getenv('VERCEL'): PENDING.discard(pid); return  # Vercel can't run a browser; the site shows live previews instead
     with lock:
         name = None
         try:
@@ -71,13 +91,11 @@ def shot_file(f):  # screenshots live in DATA_DIR/shots (a persistent disk in pr
     return send_from_directory(SHOTS if (SHOTS / f).exists() else BASE / 'static' / 'shots', f)
 @app.get('/api/check')
 def check(): return jsonify(origin=request.headers.get('Origin'), allowed=_o)  # open <backend>/api/check to see what CORS allows
-@app.get('/')
-def home(): return jsonify(ok=True, service='CreavixWorld backend', health='/api/health', admin='/admin')
 @app.get('/api/health')
-def health(): return jsonify(ok=True)
+def health(): return jsonify(ok=True, db='postgres' if PG else 'sqlite')
 @app.get('/api/projects')
 def projects():
-    return jsonify([{**p, 'shot_url': f"/static/shots/{p['shot']}" if p['shot'] else None} for p in db('select * from projects order by position,id')])
+    return jsonify([{**p, 'shot_url': f"/static/shots/{p['shot']}" if p['shot'] else None} for p in db('select * from projects order by "position",id')])
 @app.post('/api/projects')
 def add_project():
     if (e := need_admin()): return e
@@ -87,7 +105,7 @@ def add_project():
     if not desc and os.getenv('GEMINI_API_KEY'):  # auto-write the description when left empty
         try: g = describe(t, u, cat); desc, cat = g['description'], cat or g['category']
         except Exception as e: print('describe failed', e)
-    pid = db('insert into projects(title,url,category,description,featured,position) values(?,?,?,?,?,(select coalesce(max(position),0)+1 from projects))', (t, u, cat, desc, int(bool(request.json.get('featured')))))
+    pid = db('insert into projects(title,url,category,description,featured,"position") values(?,?,?,?,?,(select coalesce(max("position"),0)+1 from projects))', (t, u, cat, desc, int(bool(request.json.get('featured')))))
     shoot_async(pid, u); return jsonify(id=pid, note='Screenshot is being generated; it appears in about a minute.')
 @app.post('/api/projects/<int:i>/refresh')
 def refresh(i):
@@ -137,12 +155,13 @@ def enquiry():
     if not d['name'] or '@' not in d['email'] or len(d['message']) < 10: return jsonify(error='Name, a valid email and a message are required.'), 400
     i = db('insert into enquiries(name,email,business,type,budget,message) values(?,?,?,?,?,?)', tuple(d.values()))
     if request.json.get('skip_email') and not os.getenv('EMAIL_FROM_BACKEND'): db('update enquiries set emailed=2 where id=?', (i,))  # already emailed by Formspree
+    elif os.getenv('VERCEL'): send_mail({**d, 'id': i})  # serverless: send before the function ends
     else: threading.Thread(target=send_mail, args=({**d, 'id': i},), daemon=True).start()
     return jsonify(ok=True)
 @app.post('/api/enquiries/<int:i>/read')
 def mark_read(i):
     if (e := need_admin()): return e
-    db('update enquiries set read=? where id=?', (int(bool(request.json.get('read', True))), i)); return jsonify(ok=True)
+    db('update enquiries set "read"=? where id=?', (int(bool(request.json.get('read', True))), i)); return jsonify(ok=True)
 @app.delete('/api/enquiries/<int:i>')
 def del_enquiry(i):
     if (e := need_admin()): return e
@@ -151,7 +170,7 @@ def del_enquiry(i):
 def edit_project(i):
     if (e := need_admin()): return e
     f = {k: v for k, v in request.json.items() if k in ('title', 'url', 'category', 'description', 'featured', 'position')}
-    if f: db(f"update projects set {','.join(k + '=?' for k in f)} where id=?", (*[int(v) if k in ('featured', 'position') else str(v)[:600] for k, v in f.items()], i))
+    if f: db(f"update projects set {','.join('"' + k + '"=?' for k in f)} where id=?", (*[int(v) if k in ('featured', 'position') else str(v)[:600] for k, v in f.items()], i))
     return jsonify(ok=True)
 @app.get('/api/admin/enquiries')
 def enquiries():
@@ -181,7 +200,7 @@ def chat():
     msgs = (request.json or {}).get('messages', [])[-10:]
     contents = [{'role': 'model' if m.get('role') == 'model' else 'user', 'parts': [{'text': str(m.get('text', ''))[:800]}]} for m in msgs if m.get('text')]
     if not contents or contents[-1]['role'] != 'user': return jsonify(error='Ask me a question first.'), 400
-    projs = '\n'.join(f"- {p['title']} ({p['category']}): {p['description']} {p['url']}" for p in db('select * from projects order by position,id'))
+    projs = '\n'.join(f"- {p['title']} ({p['category']}): {p['description']} {p['url']}" for p in db('select * from projects order by "position",id'))
     system = ("You are the assistant on the CreavixWorld portfolio website. CreavixWorld is a web development brand founded by Sampath Devadiga, a developer. "
               "Services: website design & development, full-stack web applications, business websites, e-commerce, UI/UX design, website redesign. "
               "Tech: React, Next.js, JavaScript, Node.js, Express, MongoDB, PostgreSQL, Java, Spring Boot, Flutter, Tailwind CSS. "
