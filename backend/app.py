@@ -206,13 +206,26 @@ def limited(n=20, per=60):  # simple per-IP rate limit so the public chatbot can
     ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip(); now = time.time()
     h = [t for t in HITS.get(ip, []) if now - t < per] + [now]; HITS[ip] = h; return len(h) > n
 
+def faq(text):  # free, unlimited, no-AI answers built from your own data; used when Gemini is busy, over quota or not configured
+    t = text.lower(); has = lambda *w: any(re.search(r'\b' + re.escape(x), t) for x in w)
+    projs = db('select title,category from projects order by "position",id')
+    if has('price', 'cost', 'charge', 'budget', 'quote', 'how much', 'rate'): return 'Pricing depends on the pages and features you need. Sampath gives a clear quote after hearing about your project. Please use the contact form or the WhatsApp button and describe your idea.'
+    if has('how long', 'time', 'deliver', 'deadline', 'days', 'weeks'): return 'Timelines depend on the size of the website. Sampath confirms a realistic schedule after you share your requirements through the contact form or WhatsApp.'
+    if has('contact', 'whatsapp', 'reach', 'call', 'email', 'talk', 'hire', 'start'): return 'You can send a project inquiry with the contact form on this page, or tap the WhatsApp button to chat with Sampath directly. Instagram: @creavixworld.'
+    if has('project', 'work', 'portfolio', 'built', 'sample', 'example', 'website you'): return 'Live projects: ' + '; '.join(f"{p['title']} ({p['category']})" for p in projs) + '. Open the Work section to preview each one.'
+    if has('process', 'steps', 'how do you', 'how does'): return 'The process has five steps: Discover (understand your business), Design (visual direction and UX), Develop (a responsive, functional website), Launch (deploy, test, optimize) and Evolve (keep improving).'
+    if has('tech', 'stack', 'react', 'node', 'flutter', 'java', 'mongo', 'language'): return 'CreavixWorld works with React, Next.js, JavaScript, Node.js, Express, MongoDB, PostgreSQL, Java, Spring Boot, Flutter, Tailwind CSS and Framer Motion.'
+    if has('service', 'offer', 'build', 'what do you', 'what can', 'ecommerce', 'e-commerce', 'design'): return 'CreavixWorld offers website design and development, full-stack web applications, business websites, e-commerce development, UI/UX design and website redesign.'
+    if re.search(r'\b(hi|hello|hey|namaste)\b', t): return 'Hi! I can tell you about our services, projects and how to start a website project. What would you like to know?'
+    return 'I can help with our services, projects, process and how to get in touch. For anything specific to your idea, please use the contact form or the WhatsApp button and Sampath will reply personally.'
+
 @app.post('/api/chat')
 def chat():
-    if not os.getenv('GEMINI_API_KEY'): return jsonify(error='The assistant is not configured yet.'), 503
     if limited(): return jsonify(error='Too many messages. Please wait a minute and try again.'), 429
     msgs = (request.json or {}).get('messages', [])[-10:]
     contents = [{'role': 'model' if m.get('role') == 'model' else 'user', 'parts': [{'text': str(m.get('text', ''))[:800]}]} for m in msgs if m.get('text')]
     if not contents or contents[-1]['role'] != 'user': return jsonify(error='Ask me a question first.'), 400
+    if not os.getenv('GEMINI_API_KEY'): return jsonify(reply=faq(contents[-1]['parts'][0]['text']), basic=True)
     projs = '\n'.join(f"- {p['title']} ({p['category']}): {p['description']} {p['url']}" for p in db('select * from projects order by "position",id'))
     system = ("You are the assistant on the CreavixWorld portfolio website. CreavixWorld is a web development brand founded by Sampath Devadiga, a developer. "
               "Services: website design & development, full-stack web applications, business websites, e-commerce, UI/UX design, website redesign. "
@@ -221,10 +234,8 @@ def chat():
               "Rules: be friendly and answer in at most 4 short sentences, plain text only (no markdown). Never invent prices, timelines, clients, reviews or results; "
               "for quotes or timelines say Sampath will confirm after hearing about the project and point to the contact form or the WhatsApp button. Only discuss CreavixWorld and web development.")
     try: return jsonify(reply=gem(contents, system))
-    except Exception as e:
-        print('gemini chat failed', e)
-        busy = any(c in str(e) for c in ('HTTP 503', 'HTTP 429'))
-        return jsonify(error='The assistant is busy right now. Please try again in a few seconds.' if busy else 'The assistant is unavailable right now. Please use the contact form or WhatsApp.'), 502
+    except Exception as e:  # Gemini busy / over quota: answer from the built-in FAQ so chat never stops
+        print('gemini chat failed', e); return jsonify(reply=faq(contents[-1]['parts'][0]['text']), basic=True)
 
 @app.get('/api/admin/ai-test')
 def ai_test():  # shows the exact Gemini error in the admin dashboard
