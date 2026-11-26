@@ -246,8 +246,12 @@ def describe_route():
     try: return jsonify(describe(t, u, clean('category', 80)))
     except Exception as e: print('describe failed', e); return jsonify(error=str(e) if 'GEMINI_API_KEY' in str(e) else 'AI request failed. Check the key and server log.'), 502
 
-@app.get('/admin')
-def admin_page(): return send_file(BASE / 'admin.html')
+# The dashboard is served at both / and /admin (with or without a trailing slash).
+@app.get('/', strict_slashes=False)
+@app.get('/admin', strict_slashes=False)
+def admin_page(): return send_file(BASE / 'admin.html', mimetype='text/html', max_age=0)
+@app.get('/favicon.ico')
+def favicon(): return '', 204
 init()
 for _p in db('select id,url from projects where shot is null'): shoot_async(_p['id'], _p['url'])  # retry any missing previews on start
 if __name__ == '__main__': app.run(port=int(os.getenv('PORT', 5000)), debug=True)
