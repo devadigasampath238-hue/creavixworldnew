@@ -108,6 +108,37 @@ function Loader({ done }: { done: () => void }) {
   </motion.div>
 }
 
+function BrandOrb() {
+  const items = ['React', 'Next.js', 'Node.js', 'MongoDB', 'PostgreSQL', 'Java', 'Spring Boot', 'Flutter', 'Tailwind', 'Gemini AI']
+  return <div className="orb" aria-hidden><div className="orb-r">{items.map((s, i) => <span key={s} style={{ '--a': `${i * 36}deg` } as React.CSSProperties}><b>{s}</b></span>)}</div><div className="orb-c"><Logo h={120} /></div></div>
+}
+type Plan = { summary: string; pages: string[]; features: string[]; tech: string[]; next_step: string }
+const IDEAS = ['Restaurant in Udupi', 'Diagnostic centre', 'Real estate agency', 'Online clothing store', 'Coaching institute']
+function Planner() {
+  const [txt, setTxt] = useState(''), [busy, setBusy] = useState(false), [plan, setPlan] = useState<Plan | null>(null), [err, setErr] = useState('')
+  const run = async (t = txt) => {
+    t = t.trim(); if (t.length < 5 || busy) { setErr('Describe your business in a few words.'); return }
+    setErr(''); setBusy(true); setPlan(null); click()
+    try {
+      if (!API) throw new Error('The AI planner is not connected yet.')
+      const r = await fetch(`${API}/api/plan`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ business: t }) }); const j = await r.json()
+      if (!r.ok) throw new Error(j.error || 'Could not generate a plan.'); setPlan(j); tone(600, .25)
+    } catch (e) { const m = (e as Error).message; setErr(m === 'Failed to fetch' ? 'Could not reach the server. Please try again.' : m) }
+    setBusy(false)
+  }
+  const discuss = () => { const ta = document.querySelector<HTMLTextAreaElement>('textarea[name=message]'); if (ta && plan) ta.value = `AI plan for: ${txt}\nPages: ${plan.pages.join(', ')}\nFeatures: ${plan.features.join(', ')}\nI’d like to discuss this website plan.`; document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' }) }
+  return <section id="planner" className="w">
+    <Reveal><span className="tag">✨ AI WEBSITE PLANNER</span><h2>Imagine your business online.</h2><p className="mu" style={{ marginTop: 12, maxWidth: 560 }}>Describe your business and our AI drafts a website plan in seconds. It’s a starting point: Sampath confirms scope and pricing personally.</p></Reveal>
+    <div className="pl"><div className="pl-in"><textarea value={txt} onChange={e => setTxt(e.target.value)} maxLength={400} rows={4} placeholder="e.g. A family restaurant in Udupi that wants online table booking and a digital menu" aria-label="Describe your business" />
+      <div className="pl-ch">{IDEAS.map(x => <button key={x} onClick={() => { setTxt(x); run(x) }}>{x}</button>)}</div>
+      <button className="fill" onClick={() => run()} disabled={busy}>{busy ? 'THINKING…' : 'GENERATE MY WEBSITE PLAN ✨'}</button>{err && <div className="er" role="alert">{err}</div>}</div>
+      {busy && <div className="pl-out sk" aria-label="Generating"><i /><i /><i /><i /><i /></div>}
+      {plan && !busy && <motion.div className="pl-out" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+        <p>{plan.summary}</p>
+        {([['Pages', plan.pages], ['Key features', plan.features], ['Suggested tech', plan.tech]] as [string, string[]][]).map(([h, l]) => <div key={h}><b>{h}</b><div className="st">{l.map((x, i) => <motion.span key={x} initial={{ opacity: 0, scale: .8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * .05 }}>{x}</motion.span>)}</div></div>)}
+        <p className="mu">{plan.next_step}</p><div><button className="fill" onClick={discuss}>DISCUSS THIS PLAN ↗</button></div></motion.div>}
+    </div></section>
+}
 type Msg = { role: 'user' | 'model'; text: string; err?: boolean }
 const QUICK = ['What services do you offer?', 'Show me your best work', 'How do I start a project?']
 function Chatbot() {
@@ -173,7 +204,6 @@ export default function App() {
   const [menu, setMenu] = useState(false), [snd, setSnd] = useState(soundOn), [scrolled, setScrolled] = useState(false), [active, setActive] = useState('home')
   const [open, setOpen] = useState<number | null>(null), [modal, setModal] = useState<P | null>(null), [projects, setProjects] = useState<P[]>(PROJECTS), [dbg, setDbg] = useState(''), [cur, setCur] = useState('')
   const [st, setSt] = useState<{ s: 'idle' | 'load' | 'ok' | 'err'; m?: string }>({ s: 'idle' }), [errs, setErrs] = useState<Record<string, string>>({})
-  const [adminSaveErr, setAdminSaveErr] = useState(false)
   const progRef = useRef<HTMLDivElement>(null), dot = useRef<HTMLDivElement>(null), prRef = useRef<HTMLDivElement>(null), lenis = useRef<Lenis | null>(null)
   const rm = useReducedMotion()
   const [fs, sendFs] = useForm('mqppovvy'), formRef = useRef<HTMLFormElement>(null)
@@ -222,16 +252,9 @@ export default function App() {
     if (!/^\S+@\S+\.\S+$/.test(d.email || '')) er.email = 'Enter a valid email address.'
     if ((d.message || '').trim().length < 10) er.message = 'Tell me a little more (10+ characters).'
     setErrs(er); if (Object.keys(er).length) return
-    setSt({ s: 'idle' }); setAdminSaveErr(false)
-    try {
-      if (!API) throw new Error('Backend URL is not configured.')
-      const response = await fetch(`${API}/api/enquiries`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...d, skip_email: true }) })
-      if (!response.ok) throw new Error(`Backend returned HTTP ${response.status}.`)
-    } catch (error) {
-      console.warn('[CreavixWorld] could not save enquiry copy to backend', error)
-      setAdminSaveErr(true)
-    }
-    await sendFs(d)
+    setSt({ s: 'idle' })
+    if (API) fetch(`${API}/api/enquiries`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...d, skip_email: true }) }).catch(e => console.warn('[CreavixWorld] could not save enquiry copy to backend', e)) // copy for the admin dashboard
+    await sendFs(e) // Formspree (React SDK) sends the form
   }
   const field = (k: string, label: string, props: object = {}, cls = '') => <label className={cls}>{label}<input name={k} {...props} aria-invalid={!!errs[k]} />{errs[k] && <span className="er" role="alert">{errs[k]}</span>}<ValidationError field={k} errors={fs.errors} className="er" /></label>
   const big = projects.filter(p => p.big), small = projects.filter(p => !p.big)
@@ -269,7 +292,7 @@ export default function App() {
           <p>I’m a developer and creator behind CreavixWorld, building modern websites and digital experiences that help businesses stand out in the digital world.</p>
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
             <a className="fill" href="#work" onMouseEnter={hover} onClick={e => { e.preventDefault(); go('work') }}>EXPLORE MY WORK ↘</a>
-            <a className="ghost" href="#contact" onMouseEnter={hover} onClick={e => { e.preventDefault(); go('contact') }}>LET’S BUILD SOMETHING ↗</a></div><Socials />
+            <a className="ghost" href="#contact" onMouseEnter={hover} onClick={e => { e.preventDefault(); go('contact') }}>LET’S BUILD SOMETHING ↗</a><a className="ghost" href="#planner" onMouseEnter={hover} onClick={e => { e.preventDefault(); go('planner') }}>✨ PLAN MY WEBSITE WITH AI</a></div><Socials />
         </div>
         <Portrait />
       </section>
@@ -292,12 +315,13 @@ export default function App() {
           <h3>{t}</h3><AnimatePresence initial={false}>{open === i && <motion.p initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>{d}</motion.p>}</AnimatePresence></button>)}</div>
       </section>
 
+      <Planner />
       <section id="about" className="w">
         <Reveal><h2>Sampath Devadiga</h2><p className="mu" style={{ marginTop: 12 }}>Developer & Founder of CreavixWorld</p></Reveal>
         <div className="ab"><Reveal><p>I’m a passionate developer focused on building modern, visually engaging, and functional digital experiences.</p>
           <p>From business websites to full-stack applications, I transform ideas into digital products that combine thoughtful design with powerful technology.</p>
           <p>My mission is to help businesses establish a strong digital presence through exceptional website development.</p></Reveal>
-          <Reveal d={.1}><Portrait small /><div className="st" style={{ marginTop: 32 }}>{STACK.map(s => <span key={s}>{s}</span>)}</div><Socials btn /></Reveal></div>
+          <Reveal d={.1}><BrandOrb /><div className="st" style={{ marginTop: 32 }}>{STACK.map(s => <span key={s}>{s}</span>)}</div><Socials btn /></Reveal></div>
         <div className="pr" ref={prRef}>{STEPS.map(([t, d], i) => <div key={t}><span className="tag">0{i + 1}</span><h3>{t}</h3><p>{d}</p></div>)}</div>
       </section>
 
@@ -314,7 +338,6 @@ export default function App() {
             <button className="fill" disabled={fs.submitting} onMouseEnter={hover}>{fs.submitting ? 'SENDING…' : 'SEND PROJECT INQUIRY'}</button>
             <button type="button" className="ghost wa" onClick={openWA}><Brand i={siWhatsapp} /> CONTACT VIA WHATSAPP</button></div>
           <AnimatePresence>{fs.succeeded && <motion.div className="msg ac" role="status" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>Message sent. I’ll reply by email.</motion.div>}
-            {adminSaveErr && <motion.div className="msg er" role="alert" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>This enquiry may not appear in the admin panel. Please also email us directly to make sure we receive it.</motion.div>}
             {(st.s === 'err' || !!fs.errors) && <motion.div className="msg er" role="alert" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>{st.s === 'err' ? st.m : 'Message could not be sent. Check the fields and try again.'}</motion.div>}</AnimatePresence>
         </form>
       </section>
