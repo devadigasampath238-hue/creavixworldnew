@@ -184,13 +184,22 @@ def gem(prompt, system=None, as_json=False):
     body = {'contents': prompt if isinstance(prompt, list) else [{'role': 'user', 'parts': [{'text': prompt}]}], 'generationConfig': {'temperature': 0.6, 'maxOutputTokens': 4096}}
     if system: body['systemInstruction'] = {'parts': [{'text': system}]}
     if as_json: body['generationConfig']['responseMimeType'] = 'application/json'
-    req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{os.getenv('GEMINI_MODEL', 'gemini-flash-latest')}:generateContent", json.dumps(body).encode(), {'Content-Type': 'application/json', 'X-goog-api-key': key})
-    try: d = json.load(urllib.request.urlopen(req, timeout=45))
-    except urllib.error.HTTPError as e: raise RuntimeError(f"Gemini HTTP {e.code}: {e.read().decode('utf-8', 'ignore')[:400]}")
-    c = (d.get('candidates') or [{}])[0]
-    t = ''.join(p.get('text', '') for p in (c.get('content') or {}).get('parts') or []).strip()
-    if not t: raise RuntimeError(f"Gemini returned no text (finishReason={c.get('finishReason')}, promptFeedback={d.get('promptFeedback')})")
-    return t
+    last = RuntimeError('Gemini request failed')
+    # Google sometimes answers 503 "overloaded": retry once, then fall back to other models
+    for model in dict.fromkeys([os.getenv('GEMINI_MODEL') or 'gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-2.5-flash']):
+        for attempt in range(2):
+            req = urllib.request.Request(f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent', json.dumps(body).encode(), {'Content-Type': 'application/json', 'X-goog-api-key': key})
+            try: d = json.load(urllib.request.urlopen(req, timeout=20))
+            except urllib.error.HTTPError as e:
+                last = RuntimeError(f"Gemini HTTP {e.code} ({model}): {e.read().decode('utf-8', 'ignore')[:300]}")
+                if e.code in (429, 500, 503) and attempt == 0: time.sleep(1.2); continue
+                break
+            except Exception as e: last = e; break
+            c = (d.get('candidates') or [{}])[0]
+            t = ''.join(p.get('text', '') for p in (c.get('content') or {}).get('parts') or []).strip()
+            if t: return t
+            last = RuntimeError(f"Gemini returned no text ({model}, finishReason={c.get('finishReason')})"); break
+    raise last
 
 HITS = {}
 def limited(n=20, per=60):  # simple per-IP rate limit so the public chatbot can't burn your quota
@@ -212,7 +221,10 @@ def chat():
               "Rules: be friendly and answer in at most 4 short sentences, plain text only (no markdown). Never invent prices, timelines, clients, reviews or results; "
               "for quotes or timelines say Sampath will confirm after hearing about the project and point to the contact form or the WhatsApp button. Only discuss CreavixWorld and web development.")
     try: return jsonify(reply=gem(contents, system))
-    except Exception as e: print('gemini chat failed', e); return jsonify(error='The assistant is unavailable right now. Please use the contact form or WhatsApp.'), 502
+    except Exception as e:
+        print('gemini chat failed', e)
+        busy = any(c in str(e) for c in ('HTTP 503', 'HTTP 429'))
+        return jsonify(error='The assistant is busy right now. Please try again in a few seconds.' if busy else 'The assistant is unavailable right now. Please use the contact form or WhatsApp.'), 502
 
 @app.get('/api/admin/ai-test')
 def ai_test():  # shows the exact Gemini error in the admin dashboard
