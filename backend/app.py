@@ -1,4 +1,4 @@
-import os, sqlite3, smtplib, threading, time, hmac, json, re, urllib.request
+import os, sqlite3, smtplib, threading, time, hmac, json, re, urllib.request, urllib.error
 from email.message import EmailMessage
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file, send_from_directory
@@ -181,12 +181,16 @@ def enquiries():
 def gem(prompt, system=None, as_json=False):
     key = os.getenv('GEMINI_API_KEY')
     if not key: raise RuntimeError('GEMINI_API_KEY is not set on the backend')
-    body = {'contents': prompt if isinstance(prompt, list) else [{'role': 'user', 'parts': [{'text': prompt}]}], 'generationConfig': {'temperature': 0.6, 'maxOutputTokens': 2048}}
+    body = {'contents': prompt if isinstance(prompt, list) else [{'role': 'user', 'parts': [{'text': prompt}]}], 'generationConfig': {'temperature': 0.6, 'maxOutputTokens': 4096}}
     if system: body['systemInstruction'] = {'parts': [{'text': system}]}
     if as_json: body['generationConfig']['responseMimeType'] = 'application/json'
     req = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{os.getenv('GEMINI_MODEL', 'gemini-flash-latest')}:generateContent", json.dumps(body).encode(), {'Content-Type': 'application/json', 'X-goog-api-key': key})
-    d = json.load(urllib.request.urlopen(req, timeout=45))
-    return ''.join(p.get('text', '') for p in d['candidates'][0]['content']['parts']).strip()
+    try: d = json.load(urllib.request.urlopen(req, timeout=45))
+    except urllib.error.HTTPError as e: raise RuntimeError(f"Gemini HTTP {e.code}: {e.read().decode('utf-8', 'ignore')[:400]}")
+    c = (d.get('candidates') or [{}])[0]
+    t = ''.join(p.get('text', '') for p in (c.get('content') or {}).get('parts') or []).strip()
+    if not t: raise RuntimeError(f"Gemini returned no text (finishReason={c.get('finishReason')}, promptFeedback={d.get('promptFeedback')})")
+    return t
 
 HITS = {}
 def limited(n=20, per=60):  # simple per-IP rate limit so the public chatbot can't burn your quota
@@ -209,6 +213,13 @@ def chat():
               "for quotes or timelines say Sampath will confirm after hearing about the project and point to the contact form or the WhatsApp button. Only discuss CreavixWorld and web development.")
     try: return jsonify(reply=gem(contents, system))
     except Exception as e: print('gemini chat failed', e); return jsonify(error='The assistant is unavailable right now. Please use the contact form or WhatsApp.'), 502
+
+@app.get('/api/admin/ai-test')
+def ai_test():  # shows the exact Gemini error in the admin dashboard
+    if (e := need_admin()): return e
+    m = os.getenv('GEMINI_MODEL', 'gemini-flash-latest')
+    try: return jsonify(ok=True, model=m, reply=gem('Reply with the single word: ready'))
+    except Exception as e: return jsonify(ok=False, model=m, error=str(e))
 
 @app.post('/api/plan')
 def plan():
